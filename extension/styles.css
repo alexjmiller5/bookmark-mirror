@@ -16,7 +16,7 @@ section { border-top: 1px solid #d8dce0; padding: 20px 0 8px; }
 .muted, .help, dt { color: #555d65; }
 .help { font-size: 12px; margin: 6px 0 14px; }
 label, legend { display: block; font-weight: 600; margin-bottom: 5px; }
-input, textarea { display: block; width: 100%; border: 1px solid #929ba4; border-radius: 5px; padding: 9px 10px; background: #fff; color: inherit; font: inherit; }
+input, textarea, select { display: block; width: 100%; border: 1px solid #929ba4; border-radius: 5px; padding: 9px 10px; background: #fff; color: inherit; font: inherit; }
 input::placeholder, textarea::placeholder { color: #68717a; opacity: 1; }
 input[readonly] { background: #edf0f2; color: #555d65; }
 textarea { resize: vertical; min-height: 80px; }
@@ -44,3 +44,6 @@ legend .muted { font-weight: 400; }
 .tags input { width: 16px; height: 16px; flex-shrink: 0; accent-color: #30383f; margin: 0; }
 .footer-note { border-top: 1px solid #d8dce0; padding-top: 12px; margin-bottom: 0; }
 @media (max-width: 420px) { .options main { margin: 24px auto; padding: 0 18px; } }
+
+h3 { font-size: 14px; margin: 0 0 6px; }
+#capture-source { margin-bottom: 14px; }

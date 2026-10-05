@@ -57,5 +57,16 @@ export async function captureBookmark(config, input, transport = fetch) {
   const result = await request(config, '/v1/rows/push', {table: 'bookmarks', columns: Object.keys(row), rows: [row]}, transport);
   if (!Array.isArray(result.rejected)) throw new Error('Hub did not return a write receipt.');
   if (result.rejected.length) throw new Error(result.rejected.map(r => r.message ?? 'Bookmark was rejected').join('; '));
+  // A successful push receipt can acknowledge a stale LWW no-op. Confirm the
+  // actual live values, not the receipt count or the client clock.
+  const saved = (await pull(config, {url: row.url}, transport)).find(r => r.id === row.id);
+  let savedTags;
+  try { savedTags = typeof saved?.tags === 'string' ? JSON.parse(saved.tags) : saved?.tags; } catch {}
+  if (!saved || saved.deleted_at != null
+    || ['url','title','description'].some(field => saved[field] !== row[field])
+    || !Array.isArray(savedTags) || savedTags.some(tag => !row.tags.includes(tag))
+    || row.tags.some(tag => !savedTags.includes(tag))) {
+    throw new Error('Could not confirm the saved bookmark. Refresh and check the source before retrying.');
+  }
   return {id: row.id};
 }

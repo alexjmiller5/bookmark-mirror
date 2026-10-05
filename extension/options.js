@@ -35,6 +35,11 @@ function render(result) {
   const date = status.lastSync ? new Date(status.lastSync) : null;
   byId('last-sync').textContent = date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Not yet synced';
   byId('bookmarks').textContent = String(status.bookmarks ?? 0);
+  const skipped = status.skipped ?? 0;
+  byId('sync-skipped').textContent = skipped > 0
+    ? `${skipped} source bookmark${skipped === 1 ? ' has' : 's have'} no URL and ${skipped === 1 ? 'was' : 'were'} skipped.`
+    : '';
+  byId('sync-skipped').hidden = !(skipped > 0);
   byId('sync-detail').textContent = `Last sync: ${status.created ?? 0} created, ${status.updated ?? 0} updated, ${status.removed ?? 0} removed.`;
   showError('sync-error', status.error ? errorText(status.error, byId('token').value) : '');
   setBusy(busy);

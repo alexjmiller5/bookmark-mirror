@@ -3,6 +3,57 @@ let configured = false;
 let validTab = false;
 let busy = false;
 let captured = false;
+let currentPage = null;
+let currentPageCaptured = false;
+let pendingCaptures = [];
+let selectedId = '';
+let queueLoaded = false;
+const savedPendingIds = new Set();
+
+function selectCandidate(id) {
+  selectedId = id;
+  byId('capture-source').value = id;
+  const candidate = id ? pendingCaptures.find((item) => item.id === id) : currentPage;
+  byId('url').value = candidate?.url || '';
+  byId('title').value = candidate?.title || candidate?.url || '';
+  byId('description').value = '';
+  for (const field of ['title', 'description']) byId(field).setCustomValidity('');
+  for (const input of byId('tags').querySelectorAll('input:checked')) input.checked = false;
+  validTab = false;
+  try {
+    const url = new URL(candidate?.url || '');
+    validTab = ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password;
+  } catch { /* A missing or unsupported page cannot be captured. */ }
+  captured = id ? savedPendingIds.has(id) : currentPageCaptured;
+  byId('page-help').textContent = id ? 'The new Chrome bookmark selected for review.' : 'The page in your active tab.';
+  showError('capture-error', candidate && !validTab ? 'Choose a bookmark with a regular web page URL.' : '');
+  updateButtons();
+}
+
+function renderQueue(result) {
+  const queue = result.pendingCaptures ?? result.status?.pendingCaptures;
+  if (!Array.isArray(queue)) return;
+  pendingCaptures = queue;
+  const selector = byId('capture-source');
+  selector.replaceChildren();
+  const current = document.createElement('option');
+  current.value = '';
+  current.textContent = 'Current page';
+  selector.append(current);
+  for (const item of pendingCaptures) {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = `${item.title || item.url} (${item.url})`;
+    selector.append(option);
+  }
+  byId('review-prompt').hidden = !pendingCaptures.length;
+  byId('pending-count').textContent = pendingCaptures.length
+    ? `${pendingCaptures.length} new bookmark${pendingCaptures.length === 1 ? '' : 's'} waiting for review.` : '';
+  if ((!queueLoaded && pendingCaptures.length) || (selectedId && !pendingCaptures.some((item) => item.id === selectedId))) {
+    selectCandidate(pendingCaptures[0]?.id || '');
+  } else selector.value = selectedId;
+  queueLoaded = true;
+}
 
 function showError(id, error = '') {
   byId(id).textContent = error instanceof Error ? error.message : String(error);
@@ -10,6 +61,8 @@ function showError(id, error = '') {
 }
 
 function updateButtons() {
+  byId('capture-source').disabled = busy;
+  byId('capture').textContent = captured ? 'Saved' : 'Save bookmark';
   byId('sync').disabled = busy || !configured;
   byId('capture').disabled = busy || !configured || !validTab || captured;
 }
@@ -27,6 +80,11 @@ function render(result) {
   const date = status.lastSync ? new Date(status.lastSync) : null;
   byId('last-sync').textContent = date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Not yet synced';
   byId('bookmarks').textContent = String(status.bookmarks ?? 0);
+  const skipped = status.skipped ?? 0;
+  byId('sync-skipped').textContent = skipped > 0
+    ? `${skipped} source bookmark${skipped === 1 ? ' has' : 's have'} no URL and ${skipped === 1 ? 'was' : 'were'} skipped.`
+    : '';
+  byId('sync-skipped').hidden = !(skipped > 0);
   showError('sync-error', status.error || '');
   if (Array.isArray(result.tags)) {
     const selected = new Set(Array.from(byId('tags').querySelectorAll('input:checked'), (input) => input.value));
@@ -45,8 +103,15 @@ function render(result) {
     }
     byId('tags-help').textContent = byId('tags').childElementCount ? 'Choose any tags that fit.' : 'No tags available. You can save without tags.';
   }
+  renderQueue(result);
   updateButtons();
 }
+
+byId('capture-source').addEventListener('change', () => {
+  if (busy) return;
+  selectCandidate(byId('capture-source').value);
+  byId('capture-message').textContent = '';
+});
 
 byId('settings').addEventListener('click', async () => {
   try { await chrome.runtime.openOptionsPage(); }
@@ -79,15 +144,29 @@ byId('capture-form').addEventListener('submit', async (event) => {
     description: byId('description').value.trim(),
     tags: Array.from(byId('tags').querySelectorAll('input:checked'), (input) => input.value),
   };
+  if (selectedId) message.bookmarkId = selectedId;
   busy = true;
   updateButtons();
   showError('capture-error');
   byId('capture-message').textContent = 'Saving bookmark…';
   try {
-    await request(message);
+    const result = await request(message);
     captured = true;
-    byId('capture-message').textContent = 'Bookmark saved to the source.';
-    byId('capture').textContent = 'Saved';
+    if (message.bookmarkId) savedPendingIds.add(message.bookmarkId);
+    else currentPageCaptured = true;
+    render(result);
+    if (message.bookmarkId && !Array.isArray(result.pendingCaptures ?? result.status?.pendingCaptures)) {
+      try {
+        const refreshed = await request({ type: 'status' });
+        render(refreshed);
+        // A refresh must not hide the mirror failure returned by this save.
+        if (result.status?.error) showError('sync-error', result.status.error);
+      } catch {
+        showError('sync-error', 'Bookmark saved, but the review queue could not refresh. Reopen the popup to continue.');
+      }
+    }
+    byId('capture-message').textContent = result.status?.error
+      ? 'Bookmark saved; mirror sync needs attention.' : 'Bookmark saved to the source.';
   } catch (error) {
     showError('capture-error', error);
     byId('capture-message').textContent = '';
@@ -110,11 +189,10 @@ async function loadTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const url = new URL(tab?.url || '');
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error();
-    byId('url').value = url.href;
-    byId('title').value = tab.title || url.hostname;
-    validTab = true;
+    currentPage = { url: url.href, title: tab.title || url.hostname };
+    if (!selectedId) selectCandidate('');
   } catch {
-    showError('capture-error', 'Open a regular web page, then reopen Bookmark Mirror to save it.');
+    if (!selectedId) showError('capture-error', 'Open a regular web page, then reopen Bookmark Mirror to save it.');
   }
   updateButtons();
 }

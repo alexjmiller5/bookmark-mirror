@@ -28,8 +28,9 @@
     <section aria-labelledby="sync-heading">
       <h2 id="sync-heading">Connection status</h2>
       <p id="connection-state" role="status">Checking connection…</p>
-      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Source bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
+      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Mirrored bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
       <p id="sync-detail" class="help"></p>
+      <p id="sync-skipped" class="help" role="status" aria-live="polite" hidden></p>
       <p id="sync-error" class="error" role="alert" hidden></p>
       <div class="actions"><button id="sync" type="button" disabled>Sync now</button><button id="refresh" class="secondary" type="button">Check connection</button></div>
       <p id="sync-message" role="status" aria-live="polite"></p>

@@ -21,7 +21,11 @@ profile separately; revoke its dedicated token to disconnect it.
 Sync runs at startup, every five minutes while Chrome is running, and when you
 choose **Sync now**. The popup reports the last successful sync and any error.
 To capture a page, open the popup, enter a brief description, select tags and
-save. Catalog validation remains authoritative. Existing URLs retain their
+save. New bookmarks created with Chrome’s own star button appear in a review
+queue in the popup, with a badge indicating the number waiting. Select one,
+add a summary and tags, and save explicitly. Existing bookmarks are not imported
+retroactively, and the mirror’s own creations never enter this queue.
+Catalog validation remains authoritative. Existing URLs retain their
 existing tags when additional tags are captured.
 
 ## What changes in Chrome
@@ -53,16 +57,56 @@ nix build
 
 The Nix package installs `share/bookmark-mirror`. Its exported Home Manager
 module supports `programs.bookmark-mirror.enable = true` and provides stable
-files at `~/.local/share/bookmark-mirror` for Chrome's **Load unpacked** action.
+files at `$XDG_DATA_HOME/bookmark-mirror` (normally `~/.local/share/bookmark-mirror`)
+for Chrome's **Load unpacked** action. This is an installed directory, not a
+symlink into a versioned package: Chrome retains the same path across updates.
+After activating a package update, reload the extension in `chrome://extensions`.
 Installation into a browser profile uses Chrome's supported interface, and
 machine policy must permit the extension. A managed store installation should
 use its Web Store ID once the unlisted listing has been approved. Reenroll the
 hub credential on a replacement machine.
 
-`dist/bookmark-mirror.zip` is the store upload. The release workflow submits
-version tags through project-owned Web Store credentials in `.env.tpl`.
-Submission is not approval: Google review must finish before a store release
-is available. The first draft establishes the store extension ID.
+`dist/bookmark-mirror.zip` is the store upload. Version tags run the tests
+and publish that ZIP as a GitHub release. Upload the tested artifact through
+the Chrome Web Store developer console and submit it for review. This publisher
+operation uses the publisher’s native Google session; the build needs no
+account-wide Web Store credential. Submission is not approval: Google review
+must finish before a store release is available. The manifest public key keeps
+the unpacked installation and the store package on the same extension ID.
+
+## Web Store reviewer demo
+
+Use a fresh Chrome profile for this isolated demo. From the repository root,
+with Bun installed, start the fixture hub:
+
+```sh
+bun scripts/review-hub.js
+```
+
+In the extension's **Settings**, enter:
+
+- Endpoint: `http://127.0.0.1:8788`
+- Fixture credential: `review-only-not-a-secret`
+
+This credential is public and nonsecret, and works only with this review
+harness. Choose **Save and connect**, allow the localhost endpoint permission,
+and choose **Sync now**. Three synthetic `example.com` bookmarks appear in
+**Reading**, **Research**, and **Untagged** folders; the research bookmark is
+present in both tagged folders. The untagged bookmark demonstrates title
+fallback to its description.
+
+To test capture, visit `https://example.com/`, open the extension popup, enter
+a short description, select **Research**, and save. Sync again: the existing
+example bookmark retains **Reading** and also appears under **Research**.
+Capture writes affect only the fixture hub's in-memory rows. Repeated syncs
+should not duplicate unchanged mirrored links.
+
+Stop the hub with Ctrl-C. Restarting restores the original fixtures; the next
+sync reconciles the extension's managed demo bookmarks. The harness never
+reads a real hub, uses personal credentials, or writes rows to disk. It is a
+development/review tool, not part of the extension runtime or a hosted service.
+It refuses nonloopback bindings. If port 8788 is occupied, run
+`bun scripts/review-hub.js --port 8789` and use that port in Settings.
 
 ## Privacy and licensing
 

@@ -12,13 +12,21 @@
     <header class="popup-header"><h1>Bookmark Mirror</h1><button id="settings" type="button" class="text-button">Settings</button></header>
     <section aria-label="Sync status">
       <p id="connection-state" role="status">Checking connection…</p>
-      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Source bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
+      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Mirrored bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
+      <p id="sync-skipped" class="help" role="status" aria-live="polite" hidden></p>
       <p id="sync-error" class="error" role="alert" hidden></p>
       <button id="sync" type="button" class="secondary" disabled>Sync now</button>
       <p id="sync-message" role="status" aria-live="polite"></p>
     </section>
     <section aria-labelledby="capture-heading">
-      <h2 id="capture-heading">Save this page</h2>
+      <h2 id="capture-heading">Save a bookmark</h2>
+      <div id="review-prompt" hidden>
+        <h3>Review new bookmarks</h3>
+        <p id="pending-count" class="help" role="status" aria-live="polite"></p>
+        <p class="help">Choose a new Chrome bookmark, add a summary and tags, then save to the source. Nothing is sent until you select Save bookmark.</p>
+      </div>
+      <label for="capture-source">Bookmark to save</label>
+      <select id="capture-source" aria-describedby="pending-count"><option value="">Current page</option></select>
       <form id="capture-form">
         <label for="url">Page URL</label><input id="url" type="url" required readonly aria-describedby="page-help">
         <p id="page-help" class="help">The page in your active tab.</p>
