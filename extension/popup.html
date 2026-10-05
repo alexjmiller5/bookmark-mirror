@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bookmark Mirror</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="popup.js" defer></script>
+</head>
+<body class="popup">
+  <main>
+    <header class="popup-header"><h1>Bookmark Mirror</h1><button id="settings" type="button" class="text-button">Settings</button></header>
+    <section aria-label="Sync status">
+      <p id="connection-state" role="status">Checking connection…</p>
+      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Source bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
+      <p id="sync-error" class="error" role="alert" hidden></p>
+      <button id="sync" type="button" class="secondary" disabled>Sync now</button>
+      <p id="sync-message" role="status" aria-live="polite"></p>
+    </section>
+    <section aria-labelledby="capture-heading">
+      <h2 id="capture-heading">Save this page</h2>
+      <form id="capture-form">
+        <label for="url">Page URL</label><input id="url" type="url" required readonly aria-describedby="page-help">
+        <p id="page-help" class="help">The page in your active tab.</p>
+        <label for="title">Title</label><input id="title" type="text" required>
+        <label for="description">Brief summary</label><textarea id="description" rows="3" required placeholder="What is this page useful for?"></textarea>
+        <fieldset><legend>Tags <span class="muted">(optional)</span></legend><div id="tags" class="tags"></div><p id="tags-help" class="help">Loading tags…</p></fieldset>
+        <button id="capture" type="submit" disabled>Save bookmark</button>
+      </form>
+      <p id="capture-message" role="status" aria-live="polite"></p>
+      <p id="capture-error" class="error" role="alert" hidden></p>
+    </section>
+    <p class="help footer-note">Source changes mirror into tag folders, with no enclosing folder. Existing personal bookmarks are preserved.</p>
+  </main>
+</body>
+</html>

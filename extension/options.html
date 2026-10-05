@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bookmark Mirror settings</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="options.js" defer></script>
+</head>
+<body class="options">
+  <main>
+    <header><h1>Bookmark Mirror</h1><p class="muted">Connection settings</p></header>
+    <p>Source changes mirror into tag folders on your bookmarks bar, with no enclosing folder. Existing personal bookmarks are preserved.</p>
+    <section aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Connect this device</h2>
+      <form id="connection-form">
+        <label for="endpoint">Endpoint URL</label>
+        <input id="endpoint" name="endpoint" type="url" required placeholder="https://bookmarks.example.com" aria-describedby="endpoint-help" autocomplete="url" spellcheck="false">
+        <p id="endpoint-help" class="help">Use HTTPS. HTTP is allowed only for localhost development. Your browser will ask for permission to access this host.</p>
+        <label for="token">Device credential</label>
+        <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-help">
+        <p id="token-help" class="help">Use a separate credential for each device. It is stored locally on this device. Leave this field empty to keep an existing credential; saved secrets are never displayed.</p>
+        <button id="connect" type="submit">Save and connect</button>
+      </form>
+      <p id="connection-message" role="status" aria-live="polite"></p>
+      <p id="connection-error" class="error" role="alert" hidden></p>
+    </section>
+    <section aria-labelledby="sync-heading">
+      <h2 id="sync-heading">Connection status</h2>
+      <p id="connection-state" role="status">Checking connection…</p>
+      <dl class="stats"><div><dt>Last sync</dt><dd id="last-sync">Not yet synced</dd></div><div><dt>Source bookmarks</dt><dd id="bookmarks">0</dd></div></dl>
+      <p id="sync-detail" class="help"></p>
+      <p id="sync-error" class="error" role="alert" hidden></p>
+      <div class="actions"><button id="sync" type="button" disabled>Sync now</button><button id="refresh" class="secondary" type="button">Check connection</button></div>
+      <p id="sync-message" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+</body>
+</html>

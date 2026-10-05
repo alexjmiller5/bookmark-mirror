@@ -1,0 +1,1 @@
+{"name":"bookmark-mirror","private":true,"type":"module","scripts":{"test":"bun test","check":"bun test"}}

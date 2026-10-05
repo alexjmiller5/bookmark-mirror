@@ -1,0 +1,44 @@
+name: release
+
+# Tag v* → verify manifest version matches → zip extension/ → upload to the
+# Chrome Web Store and publish. Same deploy model as the other templates:
+# deploying = pushing a tag; CI does the publishing. Review (hours–days for
+# simple diffs) happens on Google's side after publish is submitted.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Manifest version must match the tag
+        run: |
+          v="$(jq -r .version extension/manifest.json)"
+          test "v$v" = "$GITHUB_REF_NAME" || {
+            echo "manifest.json version v$v != tag $GITHUB_REF_NAME" >&2; exit 1; }
+
+      - name: Load secrets
+        # op:// refs below are BY NAME on purpose: op-project-bootstrap parses this file
+        # to provision/verify the vault + items, and names are its input (an ID can't name
+        # a vault that doesn't exist yet). The ONE exception to the IDs-over-names rule -
+        # do NOT convert these to IDs. See global AGENTS.md. Renamed an item? Update here.
+        uses: 1password/load-secrets-action@v5
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # chrome-webstore-upload-cli reads exactly these env var names.
+          # Refs must match .env.tpl (CHANGEME after op-project-bootstrap).
+          EXTENSION_ID: op://Bookmark Mirror/Bookmark Mirror ENV/EXTENSION_ID
+          CLIENT_ID: op://Bookmark Mirror/Bookmark Mirror CI Chrome Web Store OAuth Client/CLIENT_ID
+          CLIENT_SECRET: op://Bookmark Mirror/Bookmark Mirror CI Chrome Web Store OAuth Client/CLIENT_SECRET
+          REFRESH_TOKEN: op://Bookmark Mirror/Bookmark Mirror CI Chrome Web Store OAuth Client/REFRESH_TOKEN
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Package
+        run: cd extension && zip -r ../extension.zip .
+
+      - name: Upload + publish
+        run: bunx chrome-webstore-upload-cli@3 upload --source extension.zip --auto-publish
