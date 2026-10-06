@@ -19,14 +19,13 @@ use an Untagged folder. Existing user bookmarks are preserved.
 - Native bookmark additions queue for explicit review after serialized mirror
   mutations. Exclude persisted managed IDs, preserve the queue across restarts,
   and never auto-import historical links or write source data without a save.
-- Unlisted Chrome Web Store distribution. Release requires review; a submitted
-  release is not live. No analytics.
+- Local unpacked distribution through Chrome's Load unpacked interface.
+  No Web Store publishing or publisher account required. No analytics.
 - Chrome installation/configuration goes through the app's exported Nix
   package/module plus the user's machine config. Never run installed software
   from this checkout.
 
-- Version tags test and publish the installable ZIP to GitHub Releases. Store
-  uploads and review submission use the publisher console and native session.
-  Build/CI has no Web Store or hub credentials.
+- Version tags test and publish the installable ZIP to GitHub Releases.
+  Build/CI has no provider or hub credentials.
 - The loopback-only review hub is an isolated in-memory fixture, never a
   runtime service or a source of production data.

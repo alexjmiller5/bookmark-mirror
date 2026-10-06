@@ -62,19 +62,22 @@ for Chrome's **Load unpacked** action. This is an installed directory, not a
 symlink into a versioned package: Chrome retains the same path across updates.
 After activating a package update, reload the extension in `chrome://extensions`.
 Installation into a browser profile uses Chrome's supported interface, and
-machine policy must permit the extension. A managed store installation should
-use its Web Store ID once the unlisted listing has been approved. Reenroll the
-hub credential on a replacement machine.
+machine policy must permit the extension. Reenroll the hub credential on a
+replacement machine.
 
-`dist/bookmark-mirror.zip` is the store upload. Version tags run the tests
-and publish that ZIP as a GitHub release. Upload the tested artifact through
-the Chrome Web Store developer console and submit it for review. This publisher
-operation uses the publisher’s native Google session; the build needs no
-account-wide Web Store credential. Submission is not approval: Google review
-must finish before a store release is available. The manifest public key keeps
-the unpacked installation and the store package on the same extension ID.
+For manual installation, extract `dist/bookmark-mirror.zip` (or the ZIP from a
+GitHub release) into a permanent directory outside the checkout. Open
+`chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and
+select the directory containing `manifest.json`. Keep that directory in place.
+To update, replace its contents with the new package and click **Reload** on
+Bookmark Mirror's extension card. Do not remove the extension: keeping the same
+extension ID preserves its connection settings and bookmark ownership records.
+The manifest public key keeps the ID stable across installation paths.
 
-## Web Store reviewer demo
+Version tags run the tests and publish the ZIP as a GitHub release. No Chrome
+Web Store account, contact email, submission, or review is required.
+
+## Local demo
 
 Use a fresh Chrome profile for this isolated demo. From the repository root,
 with Bun installed, start the fixture hub:
