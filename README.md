@@ -1,6 +1,6 @@
 # Bookmark Mirror
 
-A Chrome extension that mirrors life-data bookmarks into native folders on the
+A Chrome extension that mirrors soma bookmarks into native folders on the
 bookmarks bar and captures pages with tags. Tag folders sit directly on the
 bar, with no enclosing folder. Bookmarks with multiple tags appear in each
 matching folder; untagged bookmarks use **Untagged**.
@@ -8,7 +8,7 @@ matching folder; untagged bookmarks use **Untagged**.
 ## Connect
 
 1. Install the extension and open **Settings** from its popup.
-2. Enter your life-data hub endpoint and a dedicated token with
+2. Enter your soma hub endpoint and a dedicated token with
    `tables:read:bookmarks,tables:write:bookmarks` grants.
 3. Allow access to that specific endpoint and choose **Save and connect**.
 
@@ -37,9 +37,9 @@ source changes. User edits or moves release those links from ownership; the
 source copy is recreated separately. No folder containing foreign content is
 recursively removed. Mirror ownership is saved after each successful change.
 
-Life-data is authoritative for mirrored links. Edit source tags in life-data;
+Soma is authoritative for mirrored links. Edit source tags in soma;
 deleting a mirrored Chrome link does not delete its source and it is recreated
-on the next sync. Use the popup for explicit capture back to life-data.
+on the next sync. Use the popup for explicit capture back to soma.
 Missing titles fall back to descriptions or URLs. Rows lacking a URL are
 skipped; any prior managed copy is preserved rather than inferred deleted.
 

@@ -1,6 +1,6 @@
 # Bookmark Mirror
 
-Manifest V3 extension mirroring life-data bookmarks into native Chrome tag
+Manifest V3 extension mirroring soma bookmarks into native Chrome tag
 folders directly on the bookmarks bar. No enclosing folder. Untagged rows
 use an Untagged folder. Existing user bookmarks are preserved.
 

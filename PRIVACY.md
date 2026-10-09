@@ -1,6 +1,6 @@
 # Bookmark Mirror privacy policy
 
-Bookmark Mirror reads bookmark data from the life-data endpoint you configure
+Bookmark Mirror reads bookmark data from the soma endpoint you configure
 and writes corresponding folders and links into your Chrome bookmarks bar.
 When you explicitly capture a page, its URL, title, description and selected
 tags are sent only to that endpoint.
@@ -21,5 +21,5 @@ apply to data sent there.
 
 You can revoke the extension's token at your hub and uninstall the extension
 to remove its local settings. Uninstalling does not delete bookmarks from
-Chrome or rows from life-data. Remove those through their respective user
+Chrome or rows from soma. Remove those through their respective user
 interfaces if desired.

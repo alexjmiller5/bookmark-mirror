@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Mirror",
-  "description": "Keep life-data bookmarks in native tag folders on your bookmarks bar and capture pages with tags",
+  "description": "Keep soma bookmarks in native tag folders on your bookmarks bar and capture pages with tags",
   "version": "1.0.0",
   "background": {
     "service_worker": "background.js",
