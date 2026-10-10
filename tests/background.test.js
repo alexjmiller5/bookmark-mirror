@@ -6,7 +6,7 @@ import {endpointURL, readBookmarks, readTags, captureBookmark} from '../extensio
 
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 const input={type:'capture',url:'https://example.com/saved',title:'Saved title',description:'Saved description',tags:['Reading']};
-function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows=[],data={connection:{endpoint:'https://hub.example',token:'test-only'},syncStatus:{bookmarks:7,lastSync:'2026-01-01T00:00:00.000Z'}}}={}) {
+function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows=[],rejectHost,data={connection:{endpoint:'https://hub.example',token:'test-only'},syncStatus:{bookmarks:7,lastSync:'2026-01-01T00:00:00.000Z'}}}={}) {
  let listener,createdListener,changedListener,removedListener,stored,badge,treeReads=0,pushes=0,nextId=0;
  const nodes=new Map([['0',{id:'0',title:''}],['1',{id:'1',parentId:'0',title:'Bookmarks bar',folderType:'bookmarks-bar'}],['historical',{id:'historical',parentId:'1',title:'Historical',url:'https://example.com/historical'}]]);
  const tree=id=>({...nodes.get(id),children:[...nodes.values()].filter(n=>n.parentId===id).map(n=>tree(n.id))});
@@ -14,6 +14,7 @@ function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows
  const change=(id,info)=>{if(nodes.has(id))Object.assign(nodes.get(id),info);changedListener?.(id,structuredClone(info));};
  const remove=id=>{nodes.delete(id);removedListener?.(id,{});};
  const transport=async (url,init)=>{
+  if(rejectHost && url.startsWith(rejectHost))return Response.json({error:'forbidden'},{status:403});
   if(url.includes('/catalog/options'))return Response.json({options:[{v:'Reading'}]});
   const body=JSON.parse(init.body);
   if(url.endsWith('/push')){
@@ -45,7 +46,8 @@ function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows
   action:{async setBadgeText({text}){badge=text;}},
   runtime:{id:'fixture',getURL:path=>'chrome-extension://fixture/'+path,
    onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}},onStartup:{addListener(){}}},
-  alarms:{onAlarm:{addListener(){}}},
+  alarms:{onAlarm:{addListener(){}},async create(){}},
+  permissions:{async contains(){return true;}},
  };
  runInNewContext(source,{chrome,syncMirror,endpointURL,
   readBookmarks:c=>readBookmarks(c,transport),readTags:c=>readTags(c,transport),
@@ -248,4 +250,23 @@ test('edits and removals during sync follow queued creations and retain error ba
  expect((await app.send({type:'status'})).pendingCaptures).toEqual([]);
  expect(app.badge).toBe('!');
  expect(app.pushes).toBe(0);
+});
+
+test('an installation follows its own credential to the hub under a new address',async()=>{
+ const b=background({mirror:true});
+ const result=await b.send({type:'configure',endpoint:'https://soma.example',token:''});
+ expect(result).toMatchObject({ok:true,configured:true});
+ expect(b.data.connection).toEqual({endpoint:'https://soma.example',token:'test-only'});
+});
+test('a new credential cannot point an installation at another hub',async()=>{
+ const b=background({mirror:true});
+ const result=await b.send({type:'configure',endpoint:'https://other.example',token:'other-token'});
+ expect(result).toMatchObject({ok:false,error:'This installation already mirrors another hub. Use a separate Chrome profile for another source.'});
+ expect(b.data.connection).toEqual({endpoint:'https://hub.example',token:'test-only'});
+});
+test('a new address that rejects the stored credential keeps the working connection',async()=>{
+ const b=background({mirror:true,rejectHost:'https://rejects.example'});
+ const result=await b.send({type:'configure',endpoint:'https://rejects.example',token:''});
+ expect(result.ok).toBe(false);
+ expect(b.data.connection).toEqual({endpoint:'https://hub.example',token:'test-only'});
 });

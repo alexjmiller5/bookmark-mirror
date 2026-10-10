@@ -80,9 +80,12 @@ async function dispatch(message) {
     const endpoint = endpointURL(message.endpoint);
     if (!(await chrome.permissions.contains({origins:[new URL(endpoint).origin+'/*']}))) throw new Error('Allow access to your hub to connect.');
     const previous = await config();
-    if (previous.endpoint && previous.endpoint !== endpoint) throw new Error('This installation already mirrors another hub. Use a separate Chrome profile for another source.');
     const token = message.token?.trim() || previous.token;
     if (!token) throw new Error('Enter your bookmark-scoped token.');
+    // A hub may move to a new address: the credential it issued still opens it
+    // there, so an installation follows its own credential (validated below)
+    // and only a new credential counts as another source.
+    if (previous.endpoint && previous.endpoint !== endpoint && message.token?.trim()) throw new Error('This installation already mirrors another hub. Use a separate Chrome profile for another source.');
     const candidate = {endpoint,token};
     // Validate before replacing a working connection.
     await Promise.all([readBookmarks(candidate),readTags(candidate)]);
