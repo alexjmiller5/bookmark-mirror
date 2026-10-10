@@ -12,14 +12,17 @@ matching folder; untagged bookmarks use **Untagged**.
    `tables:read:bookmarks,tables:write:bookmarks` grants.
 3. Allow access to that specific endpoint and choose **Save and connect**.
 
-The hub must support the scoped rows API and
-`GET /v1/catalog/options?table=bookmarks&column=tags`. A failed or incomplete
+The hub must support the scoped rows API with `/v1/cursor` and batched pulls,
+and `GET /v1/catalog/options?table=bookmarks&column=tags`. A failed or incomplete
 read never becomes an empty mirror. Tokens are kept in the extension's local,
 trusted-context storage, not synced to other browsers. Connect each browser
 profile separately; revoke its dedicated token to disconnect it.
 
 Sync runs at startup, every five minutes while Chrome is running, and when you
-choose **Sync now**. The popup reports the last successful sync and any error.
+choose **Sync now**. The extension keeps the rows and the hub's cursor locally,
+so a sync with nothing new is one small request and a change pulls only the
+changed rows; tag choices refresh on **Sync now**, when bookmarks change, or
+hourly. The popup reports the last successful sync and any error.
 To capture a page, open the popup, enter a brief description, select tags and
 save. New bookmarks created with Chrome’s own star button appear in a review
 queue in the popup, with a badge indicating the number waiting. Select one,

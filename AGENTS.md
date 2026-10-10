@@ -14,6 +14,11 @@ use an Untagged folder. Existing user bookmarks are preserved.
   Persist ownership after each successful mutation; never recursive-delete
   user content. Missing managed bookmarks are recreated from the source.
 - Background alarm and explicit Sync now perform the same serialized sync.
+  It reads through extension/table-pull.js, vendored verbatim from soma's
+  core/src/table-pull.js (update it there, then copy): rows and the pull state
+  live in chrome.storage.local, a quiet round is one /v1/cursor request, and
+  tag choices are re-read on Sync now, with a bookmark change, or hourly. The
+  review hub speaks the same cursor and batch routes.
 - Capture uses the hub's rows API and catalog tags; confirm persisted values.
   A later mirror error must not misreport a confirmed capture as failed.
 - Native bookmark additions queue for explicit review after serialized mirror

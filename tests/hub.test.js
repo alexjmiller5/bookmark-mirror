@@ -1,22 +1,46 @@
 import {test,expect} from 'bun:test';
-import {readBookmarks, readTags, captureBookmark} from '../extension/hub.js';
+import {readBookmarkChanges, applyBookmarkChanges, readTags, captureBookmark} from '../extension/hub.js';
 const cfg={endpoint:'https://hub.example',token:'test-only'};
 const reply=(x,status=200)=>new Response(JSON.stringify(x),{status});
-test('reads every page before returning a snapshot, with scoped bearer auth',async()=>{
- let n=0;
- const rows=await readBookmarks(cfg,async(url,init)=>{
+const at=n=>`2026-01-01T00:00:0${n}.000Z`;
+// A hub answering the cursor and batched pulls from `rows` (each with hub_at).
+function hubOf(rows,seen=[]) {
+ return async(url,init)=>{
   expect(init.headers.Authorization).toBe('Bearer test-only');
-  const b=JSON.parse(init.body);expect(b.table).toBe('bookmarks');
-  expect(b.after).toBe(n? 'a':undefined);
-  return n++?reply({rows:[{id:'b'}],next_cursor:null}):reply({rows:[{id:'a'}],next_cursor:'a'});
- });
- expect(rows.map(x=>x.id)).toEqual(['a','b']);
+  expect(init.redirect).toBe('error');
+  seen.push(new URL(url).pathname);
+  const live=rows();
+  if(url.endsWith('/v1/cursor')) {
+   const mark=live.reduce((m,r)=>r.hub_at>m?r.hub_at:m,'');
+   return reply({tables:{bookmarks:mark},at_mark:{bookmarks:live.filter(r=>r.hub_at===mark).length},pull_batch:{items:50,rows:5000}});
+  }
+  const [item]=JSON.parse(init.body).batch;
+  expect(item.table).toBe('bookmarks');
+  return reply({batch:[{rows:live.filter(r=>!item.since || r.hub_at>=item.since),next_cursor:null}]});
+ };
+}
+test('reads the whole table once, then only arrivals, and a quiet round is one cursor request',async()=>{
+ let rows=[{id:'a',url:'https://a.example/',hub_at:at(1),deleted_at:null},{id:'b',url:'https://b.example/',hub_at:at(2),deleted_at:null}];
+ const seen=[],transport=hubOf(()=>rows,seen);
+ const first=await readBookmarkChanges(cfg,null,transport);
+ expect(first.full).toBe(true);
+ let mirror=applyBookmarkChanges([{id:'stale'}],first);
+ expect(mirror.map(r=>r.id)).toEqual(['a','b']);
+ expect(seen).toEqual(['/v1/cursor','/v1/rows/pull']);
+ seen.length=0;
+ const quiet=await readBookmarkChanges(cfg,first.state,transport);
+ expect(seen).toEqual(['/v1/cursor']);
+ expect(applyBookmarkChanges(mirror,quiet)).toEqual(mirror);
+ rows=[{...rows[0],url:'https://a2.example/',hub_at:at(3)},{...rows[1],deleted_at:at(3),hub_at:at(3)},{id:'c',url:'https://c.example/',hub_at:at(3),deleted_at:null}];
+ const later=await readBookmarkChanges(cfg,quiet.state,transport);
+ mirror=applyBookmarkChanges(mirror,later);
+ expect(mirror.map(r=>[r.id,r.url])).toEqual([['a','https://a2.example/'],['c','https://c.example/']]);
 });
-test('fails closed on partial reads, malformed replies and cursor cycles',async()=>{
- let n=0;
- await expect(readBookmarks(cfg,async()=>n++?reply({},503):reply({rows:[{id:'a'}],next_cursor:'a'}))).rejects.toThrow('503');
- await expect(readBookmarks(cfg,async()=>reply({}))).rejects.toThrow();
- await expect(readBookmarks(cfg,async()=>reply({rows:[],next_cursor:'a'}))).rejects.toThrow();
+test('fails closed on hub refusals and malformed replies',async()=>{
+ await expect(readBookmarkChanges(cfg,null,async()=>reply({},503))).rejects.toThrow('Hub request failed (503)');
+ await expect(readBookmarkChanges(cfg,null,async()=>reply({}))).rejects.toThrow('Invalid bookmark response');
+ await expect(readBookmarkChanges(cfg,null,async url=>url.endsWith('/v1/cursor')
+  ? reply({tables:{bookmarks:at(1)},pull_batch:{items:50,rows:5000}}) : reply({batch:[{rows:[],next_cursor:'a'}]}))).rejects.toThrow('Invalid bookmark response');
 });
 test('reads only the authorized static tag choices',async()=>{
  expect(await readTags(cfg,async url=>{expect(url).toEndWith('/v1/catalog/options?table=bookmarks&column=tags');return reply({options:[{v:'Research',d:'Study'}]});})).toEqual(['Research']);
@@ -34,7 +58,7 @@ test('capture updates existing live URL sparsely, preserves existing tags and ch
  await expect(captureBookmark(cfg,input,async(url)=>url.endsWith('/pull')?reply({rows:[],next_cursor:null}):reply({rejected:[{message:'No write permission'}]}))).rejects.toThrow('No write permission');
 });
 test('requires HTTPS endpoint and ordinary web bookmark URLs',async()=>{
- await expect(readBookmarks({...cfg,endpoint:'http://public.example'})).rejects.toThrow();
+ await expect(readBookmarkChanges({...cfg,endpoint:'http://public.example'},null)).rejects.toThrow();
  await expect(captureBookmark(cfg,{url:'javascript:alert(1)',title:'x',description:'x',tags:[]})).rejects.toThrow();
 });
 

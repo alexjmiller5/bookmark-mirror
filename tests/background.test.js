@@ -2,27 +2,35 @@ import {expect, test} from 'bun:test';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {syncMirror} from '../extension/mirror.js';
-import {endpointURL, readBookmarks, readTags, captureBookmark} from '../extension/hub.js';
+import {endpointURL, readBookmarkChanges, applyBookmarkChanges, readTags, captureBookmark} from '../extension/hub.js';
 
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 const input={type:'capture',url:'https://example.com/saved',title:'Saved title',description:'Saved description',tags:['Reading']};
 function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows=[],rejectHost,data={connection:{endpoint:'https://hub.example',token:'test-only'},syncStatus:{bookmarks:7,lastSync:'2026-01-01T00:00:00.000Z'}}}={}) {
- let listener,createdListener,changedListener,removedListener,stored,badge,treeReads=0,pushes=0,nextId=0;
+ let listener,alarmListener,createdListener,changedListener,removedListener,stored,badge,treeReads=0,pushes=0,nextId=0,version=0;
+ const routes=[];
+ const stampOf=n=>`2026-01-01T00:00:${String(n).padStart(2,'0')}.000Z`;
  const nodes=new Map([['0',{id:'0',title:''}],['1',{id:'1',parentId:'0',title:'Bookmarks bar',folderType:'bookmarks-bar'}],['historical',{id:'historical',parentId:'1',title:'Historical',url:'https://example.com/historical'}]]);
  const tree=id=>({...nodes.get(id),children:[...nodes.values()].filter(n=>n.parentId===id).map(n=>tree(n.id))});
  const native=node=>{nodes.set(node.id,{parentId:'1',...node});createdListener?.(node.id,structuredClone(nodes.get(node.id)));};
  const change=(id,info)=>{if(nodes.has(id))Object.assign(nodes.get(id),info);changedListener?.(id,structuredClone(info));};
  const remove=id=>{nodes.delete(id);removedListener?.(id,{});};
  const transport=async (url,init)=>{
+  routes.push(new URL(url).pathname);
   if(rejectHost && url.startsWith(rejectHost))return Response.json({error:'forbidden'},{status:403});
   if(url.includes('/catalog/options'))return Response.json({options:[{v:'Reading'}]});
   const body=JSON.parse(init.body);
   if(url.endsWith('/push')){
    pushes++;
-   if(save)stored={...body.rows[0],deleted_at:null};
+   if(save)stored={...body.rows[0],deleted_at:null,hub_at:stampOf(++version)};
    return Response.json({upserted:1,rejected:[]});
   }
-  const all=[...rows,...(stored?[stored]:[])];
+  const all=[...rows.map(row=>({hub_at:stampOf(0),...row})),...(stored?[stored]:[])];
+  if(url.endsWith('/v1/cursor')){
+   const mark=all.reduce((m,row)=>row.hub_at>m?row.hub_at:m,'');
+   return Response.json({tables:{bookmarks:mark},at_mark:{bookmarks:all.filter(row=>row.hub_at===mark).length},pull_batch:{items:50,rows:5000}});
+  }
+  if(body.batch)return Response.json({batch:body.batch.map(item=>({rows:all.filter(row=>!item.since || row.hub_at>=item.since),next_cursor:null}))});
   return Response.json({rows:all.filter(row=>!body.where || Object.entries(body.where).every(([k,v])=>row[k]===v)),next_cursor:null});
  };
  const chrome={
@@ -46,13 +54,13 @@ function background({save=true,failStatus=false,mirror=false,onMirrorCreate,rows
   action:{async setBadgeText({text}){badge=text;}},
   runtime:{id:'fixture',getURL:path=>'chrome-extension://fixture/'+path,
    onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}},onStartup:{addListener(){}}},
-  alarms:{onAlarm:{addListener(){}},async create(){}},
+  alarms:{onAlarm:{addListener(fn){alarmListener=fn;}},async create(){}},
   permissions:{async contains(){return true;}},
  };
  runInNewContext(source,{chrome,syncMirror,endpointURL,
-  readBookmarks:c=>readBookmarks(c,transport),readTags:c=>readTags(c,transport),
+  readBookmarkChanges:(c,state)=>readBookmarkChanges(c,state,transport),applyBookmarkChanges,readTags:c=>readTags(c,transport),
   captureBookmark:(c,message)=>captureBookmark(c,message,transport),URL});
- return {data,native,change,remove,get pushes(){return pushes;},get stored(){return stored;},get badge(){return badge;},get treeReads(){return treeReads;},
+ return {data,native,change,remove,routes,rows,alarm:()=>alarmListener({name:'bookmark-mirror-sync'}),get pushes(){return pushes;},get stored(){return stored;},get badge(){return badge;},get treeReads(){return treeReads;},
   send:message=>new Promise(resolve=>listener(message,{id:'fixture',url:'chrome-extension://fixture/popup.html'},resolve))};
 }
 
@@ -269,4 +277,49 @@ test('a new address that rejects the stored credential keeps the working connect
  const result=await b.send({type:'configure',endpoint:'https://rejects.example',token:''});
  expect(result.ok).toBe(false);
  expect(b.data.connection).toEqual({endpoint:'https://hub.example',token:'test-only'});
+});
+
+const mirrored={id:'row-1',url:'https://example.com/mirrored',title:'Mirrored',tags:['Reading'],deleted_at:null};
+test('a quiet alarm sync is one cursor request and keeps the mirror and tag choices',async()=>{
+ const app=background({mirror:true,rows:[mirrored]});
+ expect((await app.send({type:'sync'})).ok).toBe(true);
+ expect(app.routes).toEqual(['/v1/cursor','/v1/rows/pull','/v1/catalog/options']);
+ expect(app.data.bookmarkRows.map(row=>row.id)).toEqual(['row-1']);
+ app.routes.length=0;
+ app.alarm();
+ const status=await app.send({type:'status'});
+ expect(app.routes).toEqual(['/v1/cursor']);
+ expect(status.tags).toEqual(['Reading']);
+ expect(app.data.mirrorState.links).toHaveLength(1);
+ expect(app.data.syncStatus.error).toBeNull();
+});
+
+test('a changed table, Sync now or an hour-old choice list re-reads tags; changes apply to the stored rows',async()=>{
+ const app=background({mirror:true,rows:[mirrored]});
+ await app.send({type:'sync'});
+ app.rows.push({id:'row-2',url:'https://example.com/second',title:'Second',tags:['Reading'],deleted_at:null,hub_at:'2026-01-01T00:01:00.000Z'});
+ app.rows[0]={...mirrored,deleted_at:'2026-01-01T00:01:00.000Z',hub_at:'2026-01-01T00:01:00.000Z'};
+ app.routes.length=0;
+ app.alarm();
+ await app.send({type:'status'});
+ expect(app.routes).toEqual(['/v1/cursor','/v1/rows/pull','/v1/catalog/options']);
+ expect(app.data.bookmarkRows.map(row=>row.id)).toEqual(['row-2']);
+ expect(app.data.mirrorState.links.map(link=>link.rowId)).toEqual(['row-2']);
+ app.routes.length=0;
+ await app.send({type:'sync'});
+ expect(app.routes).toEqual(['/v1/cursor','/v1/catalog/options']);
+ app.routes.length=0;
+ app.data.tagsAt='2026-01-01T00:00:00.000Z';
+ app.alarm();
+ await app.send({type:'status'});
+ expect(app.routes).toEqual(['/v1/cursor','/v1/catalog/options']);
+});
+
+test('configuring seeds the stored rows from its validating read, so the first sync is quiet',async()=>{
+ const app=background({mirror:true,rows:[mirrored],data:{}});
+ const result=await app.send({type:'configure',endpoint:'https://hub.example',token:'test-only'});
+ expect(result.ok).toBe(true);
+ expect(app.routes.filter(route=>route==='/v1/rows/pull')).toHaveLength(1);
+ expect(app.routes.filter(route=>route==='/v1/catalog/options')).toHaveLength(1);
+ expect(app.data.mirrorState.links).toHaveLength(1);
 });

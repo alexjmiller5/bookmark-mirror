@@ -1,6 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { startReviewHub, REVIEW_TOKEN } from '../scripts/review-hub.js';
-import { readBookmarks, readTags, captureBookmark } from '../extension/hub.js';
+import { readBookmarkChanges, applyBookmarkChanges, readTags, captureBookmark } from '../extension/hub.js';
+
+const readBookmarks = async config => applyBookmarkChanges([], await readBookmarkChanges(config, null));
 
 const servers = [];
 afterEach(() => { for (const server of servers.splice(0)) server.stop(true); });
@@ -58,10 +60,28 @@ test('pull supports exact URL filtering, column projection and pagination', asyn
   expect(filtered.next_cursor).toBeNull();
 });
 
+test('a quiet round is one cursor request; a capture arrives incrementally', async () => {
+  const config = start(), seen = [];
+  const counting = (url, init) => { seen.push(new URL(url).pathname); return fetch(url, init); };
+  const first = await readBookmarkChanges(config, null, counting);
+  expect(first.full).toBe(true);
+  expect(seen).toEqual(['/v1/cursor', '/v1/rows/pull']);
+  seen.length = 0;
+  const quiet = await readBookmarkChanges(config, first.state, counting);
+  expect(seen).toEqual(['/v1/cursor']);
+  expect(quiet.rows).toEqual([]);
+  await captureBookmark(config, { url: 'https://example.com/later', title: 'Later', description: 'Arrives incrementally', tags: ['Reading'] });
+  const later = await readBookmarkChanges(config, quiet.state, counting);
+  // Incremental: the row on the held mark is re-read (inclusive), then the capture.
+  expect(later.full).toBe(false);
+  expect(later.rows.map(row => row.url)).toEqual(['https://example.com/untagged', 'https://example.com/later']);
+  expect(applyBookmarkChanges(applyBookmarkChanges([], first), later)).toHaveLength(4);
+});
+
 test('missing or incorrect bearer credentials cannot read or write fixtures', async () => {
   const config = start();
   expect((await fetch(config.endpoint + '/v1/catalog/options?table=bookmarks&column=tags')).status).toBe(401);
-  for (const path of ['/v1/rows/pull', '/v1/rows/push']) {
+  for (const path of ['/v1/cursor', '/v1/rows/pull', '/v1/rows/push']) {
     expect((await request(config, path, { ...pull, rows: [] }, 'wrong')).status).toBe(401);
   }
   expect(await readBookmarks(config)).toHaveLength(3);

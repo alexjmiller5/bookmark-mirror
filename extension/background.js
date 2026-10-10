@@ -1,5 +1,5 @@
 import {syncMirror} from './mirror.js';
-import {endpointURL, readBookmarks, readTags, captureBookmark} from './hub.js';
+import {endpointURL, readBookmarkChanges, applyBookmarkChanges, readTags, captureBookmark} from './hub.js';
 
 const ALARM = 'bookmark-mirror-sync';
 let queue = Promise.resolve();
@@ -58,14 +58,22 @@ async function updatePendingCapture(id, changes) {
   await chrome.storage.local.set({pendingCaptures:updated});
   await updateBadge();
 }
-async function sync() {
+// The rows and the hub's pull state stay in local storage, so an unchanged
+// hub costs one cursor request. Tag choices follow the catalog, not the rows:
+// they are re-read on Sync now (`explicit`), with a bookmark change, or hourly.
+async function sync(explicit = false) {
   const c = await config();
   if (!c.token) throw new Error('Connect your hub in Settings first.');
   try {
+    const {bookmarkRows = [], pullState = null, tagChoices = [], tagsAt = ''} = await chrome.storage.local.get(['bookmarkRows','pullState','tagChoices','tagsAt']);
     // Neither incomplete data nor failed tag reads may alter the bookmark tree.
-    const [rows, tags] = await Promise.all([readBookmarks(c), readTags(c)]);
+    const change = await readBookmarkChanges(c, pullState);
+    const fresh = !explicit && !change.full && !change.rows.length && !change.deleted.length && Date.now() - Date.parse(tagsAt) < 3600000;
+    const tags = fresh ? tagChoices : await readTags(c);
+    const rows = applyBookmarkChanges(bookmarkRows, change);
+    await chrome.storage.local.set({bookmarkRows:rows,pullState:change.state,tagChoices:tags,...(fresh ? {} : {tagsAt:new Date().toISOString()})});
     const result = await syncMirror({bookmarks:chrome.bookmarks, storage:chrome.storage.local},rows);
-    await chrome.storage.local.set({tagChoices:tags,syncStatus:{...result,lastSync:new Date().toISOString(),error:null}});
+    await chrome.storage.local.set({syncStatus:{...result,lastSync:new Date().toISOString(),error:null}});
     await updateBadge();
     return status();
   } catch (e) {
@@ -75,7 +83,7 @@ async function sync() {
 }
 async function dispatch(message) {
   if (message.type === 'status') return status();
-  if (message.type === 'sync') return sync();
+  if (message.type === 'sync') return sync(true);
   if (message.type === 'configure') {
     const endpoint = endpointURL(message.endpoint);
     if (!(await chrome.permissions.contains({origins:[new URL(endpoint).origin+'/*']}))) throw new Error('Allow access to your hub to connect.');
@@ -87,9 +95,9 @@ async function dispatch(message) {
     // and only a new credential counts as another source.
     if (previous.endpoint && previous.endpoint !== endpoint && message.token?.trim()) throw new Error('This installation already mirrors another hub. Use a separate Chrome profile for another source.');
     const candidate = {endpoint,token};
-    // Validate before replacing a working connection.
-    await Promise.all([readBookmarks(candidate),readTags(candidate)]);
-    await chrome.storage.local.set({connection:candidate});
+    // Validate before replacing a working connection; the read seeds the stored rows.
+    const [change, tags] = await Promise.all([readBookmarkChanges(candidate,null),readTags(candidate)]);
+    await chrome.storage.local.set({connection:candidate,bookmarkRows:applyBookmarkChanges([],change),pullState:change.state,tagChoices:tags,tagsAt:new Date().toISOString()});
     await chrome.alarms.create(ALARM,{periodInMinutes:5});
     return sync();
   }
@@ -130,10 +138,11 @@ chrome.bookmarks.onRemoved.addListener(id=>enqueueBookmarkEvent(()=>updatePendin
 async function start() {
   await trustedStorage;
   await chrome.alarms.create(ALARM,{periodInMinutes:5});
-  if ((await config()).token) await enqueue(sync).catch(()=>{});
+  if ((await config()).token) await enqueue(()=>sync()).catch(()=>{});
 }
 chrome.runtime.onInstalled.addListener(()=>{void start();});
 chrome.runtime.onStartup.addListener(()=>{void start();});
-chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name===ALARM)void enqueue(sync).catch(()=>{});});
+// Wake hook: the hub's change signal (GET /v1/changes naming bookmarks) would enqueue(sync) here; the alarm stays as the fallback.
+chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name===ALARM)void enqueue(()=>sync()).catch(()=>{});});
 // Restore the persistent queue's badge on every service-worker activation.
 void enqueue(updateBadge).catch(()=>{});

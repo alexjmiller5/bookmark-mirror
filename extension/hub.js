@@ -1,3 +1,5 @@
+import {pullTable} from './table-pull.js';
+
 export function endpointURL(value) {
   const url = new URL(value);
   if (url.username || url.password || url.search || url.hash ||
@@ -6,6 +8,8 @@ export function endpointURL(value) {
   }
   return url.href.replace(/\/$/, '');
 }
+const failed = status => new Error(`Hub request failed (${status}). Check your connection and bookmark permissions.`);
+const options = {signal: () => AbortSignal.timeout(30000), redirect: 'error', credentials: 'omit', cache: 'no-store'};
 async function request(config, path, body, transport) {
   const endpoint = endpointURL(config.endpoint);
   if (!config.token) throw new Error('Connect your hub in Settings first.');
@@ -13,17 +17,40 @@ async function request(config, path, body, transport) {
     method: body === undefined ? 'GET' : 'POST',
     headers: {Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json'},
     ...(body === undefined ? {} : {body: JSON.stringify(body)}),
-    signal: AbortSignal.timeout(30000), redirect: 'error', credentials: 'omit', cache: 'no-store'
+    ...options, signal: options.signal()
   });
-  if (!response.ok) throw new Error(`Hub request failed (${response.status}). Check your connection and bookmark permissions.`);
+  if (!response.ok) throw failed(response.status);
   return response.json();
+}
+const COLUMNS = ['id','url','title','tags','description','deleted_at','updated_at'];
+// One cursor request when nothing changed; otherwise the arrivals since `state`
+// (the whole table when `state` is null). Persist the returned state only with
+// the rows it was applied to.
+export async function readBookmarkChanges(config, state, transport = fetch) {
+  const endpoint = endpointURL(config.endpoint);
+  if (!config.token) throw new Error('Connect your hub in Settings first.');
+  try {
+    return await pullTable({endpoint, token: config.token, table: 'bookmarks', columns: COLUMNS, state,
+      fetch: (url, init) => transport(url, {...init, ...options, signal: options.signal()})});
+  } catch (e) {
+    if (e.status) throw failed(e.status);
+    if (/^invalid /.test(e.message)) throw new Error('Invalid bookmark response; no bookmarks were changed.');
+    throw e;
+  }
+}
+// The live rows after a change: a full pull replaces them, otherwise upsert and drop tombstones.
+export function applyBookmarkChanges(rows, change) {
+  const byId = new Map(change.full ? [] : rows.map(row => [row.id, row]));
+  for (const id of change.deleted) byId.delete(id);
+  for (const row of change.rows) byId.set(row.id, row);
+  return [...byId.values()];
 }
 async function pull(config, where, transport) {
   const rows = [], seen = new Set();
   let after;
   do {
     const result = await request(config, '/v1/rows/pull', {
-      table: 'bookmarks', columns: ['id','url','title','tags','description','deleted_at','updated_at'],
+      table: 'bookmarks', columns: COLUMNS,
       since: '', limit: 200, ...(where ? {where} : {}), ...(after === undefined ? {} : {after})
     }, transport);
     if (!Array.isArray(result.rows) || (result.next_cursor != null && typeof result.next_cursor !== 'string'))
@@ -37,7 +64,6 @@ async function pull(config, where, transport) {
   } while (after != null);
   return rows;
 }
-export const readBookmarks = (config, transport = fetch) => pull(config, null, transport);
 export async function readTags(config, transport = fetch) {
   const result = await request(config, '/v1/catalog/options?table=bookmarks&column=tags', undefined, transport);
   if (!Array.isArray(result.options) || result.options.some(o => typeof o.v !== 'string')) throw new Error('Invalid tag choices from hub.');
